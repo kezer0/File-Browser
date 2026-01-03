@@ -9,11 +9,13 @@ namespace fs = std::filesystem;
 struct SearchOption
 {
 	bool help = false;
-	std::string entry = "";
-	std::string dir = "";
+	std::u8string entry;
+	std::u8string dir;
+	int maxDepth = -1;
+	int maxResoults = -1;
 };
 
-static std::string toLower(std::string s) {
+static std::u8string toLower(std::u8string s) {
 
 	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
 		return std::tolower(c);
@@ -21,31 +23,53 @@ static std::string toLower(std::string s) {
 	return s;
 }
 
-static bool checkFlags(std::vector<std::string>& args, SearchOption& options) {
+static bool checkFlags(std::vector<std::u8string>& args, SearchOption& options) {
 	if (args.size() < 2) {
 		std::cerr << "Error: missing required arguments.\n";
 		std::cerr << "Use 'search -h' to display help.\n";
 		return false;
 	}
 
-	static std::string arg;
+	std::u8string arg;
 	for (size_t i = 1; i < args.size(); i++) {
 		arg = args[i];
 		if (i == 1) {
 			options.entry = arg;
 		}
-		else if (arg == "-h") {
+		else if (arg == (const char8_t*)"-h") {
 			options.help = true;
 		}
-		else if (i + 1 < args.size() && arg == "-d") {
-			options.dir = args[i + 1];
+		else if (i + 1 < args.size() && arg == (const char8_t*)"-d") {
+			options.dir = args[++i];
+		}
+		else if (i + 1 < args.size() && arg == (const char8_t*)"--max-results") {
+			const std::u8string& val = args[++i];
+			std::string str(reinterpret_cast<const char*>(val.data()), val.size());
+
+			try {
+				options.maxResoults = std::stoi(str);
+			}
+			catch (const std::exception& e) {
+				std::cerr << "Error: Invalid number for --max-results: " << e.what() << std::endl;
+			}
+		}
+		else if (i + 1 < args.size() && arg == (const char8_t*)"--max-depth") {
+			const std::u8string& val = args[++i];
+			std::string str(reinterpret_cast<const char*>(val.data()), val.size());
+
+			try {
+				options.maxDepth = std::stoi(str);
+			}
+			catch (const std::exception& e) {
+				std::cerr << "Error: Invalid number for --max-depth: " << e.what() << std::endl;
+			}
 		}
 	}
 	return true;
 }
 
-static void parseString(const std::string& input, std::vector<std::string>& args) {
-	std::string current;
+static void parseString(const std::string& input, std::vector<std::u8string>& args) {
+	std::u8string current;
 
 	for (char c : input) {
 		if (c == '"') {
@@ -65,42 +89,69 @@ static void parseString(const std::string& input, std::vector<std::string>& args
 	}
 }
 
-static void searchFiles(const std::string& target, const std::string& directory) {
-	if (!fs::exists(directory)) return;
-	if (!fs::is_directory(directory)) return;
+static void searchFiles(SearchOption& opt) {
+	if (!fs::exists(opt.dir)) return;
+	if (!fs::is_directory(opt.dir)) return;
 
 	auto start = std::chrono::steady_clock::now();
-	const std::string targetLower = toLower(target);
-	int i = 0;
-	for (const auto& entry : fs::recursive_directory_iterator(directory, fs::directory_options::skip_permission_denied)) {
+	const std::u8string targetLower = toLower(opt.entry);
+	std::u8string fileName;
+	std::string pathStr;
 
-		if (!entry.is_regular_file()) continue;
+	std::error_code ec;
+	fs::recursive_directory_iterator it(opt.dir, fs::directory_options::skip_permission_denied);
+	int resoults = 0;
 
-		std::string fileName = toLower(entry.path().filename().string());
+	for (const auto& entry : it) {
+		if (opt.maxDepth > 0 && it.depth() > opt.maxDepth) { it.disable_recursion_pending(); continue; }
+		if (opt.maxResoults > 0 && opt.maxResoults <= resoults) { break; }
+		auto status = entry.status(ec);
+		if (ec || status.type() != fs::file_type::regular) continue;
+
+		fileName = toLower(entry.path().filename().u8string());
 
 		if (fileName.find(targetLower) != std::string::npos) {
-			std::cout << "[" << i << "]" << entry.path() << std::endl;
-			i++;
+			auto p = entry.path().u8string();
+			pathStr = reinterpret_cast<const char*>(p.data());
+			std::cout << "[" << resoults << "]" << pathStr << std::endl;
+
+			resoults++;
 		}
 	}
 	auto end = std::chrono::steady_clock::now();
-	auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+	auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 	std::cout << "\nSearch summary:\n";
-	std::cout << "  Files found: " << i << "\n";
-	std::cout << "  Time elapsed: " << diff.count() << " ms\n";
+	std::cout << "  Files found: " << resoults << "\n";
+	std::cout << "  Time elapsed: ";
+
+	if (total_ms.count() < 1000) {
+		std::cout << total_ms << " ms\n";
+	}
+	else {
+		long long ms = total_ms.count() % 1000;
+		long long total_sec = total_ms.count() / 1000;
+		long long sec = total_sec % 60;
+		long long total_min = total_sec / 60;
+		long long min = total_min % 60;
+		long long hours = total_min / 60;
+
+		if (hours > 0) std::cout << hours << "h ";
+		if (min > 0 || hours > 0) std::cout << min << "m ";
+		std::cout << sec << "s " << ms << "ms\n";
+	}
 
 }
 
 int main() {
 	std::string input;
-	std::vector<std::string> args;
+	std::vector<std::u8string> args;
 
 	std::getline(std::cin, input);
 
 	parseString(input, args);
 
 	if (args.empty()) return 1;
-	if (args[0] == "search") {
+	if (args[0] == (const char8_t*)"search") {
 		SearchOption opt;
 		if (checkFlags(args, opt)) {
 			if (opt.help || opt.entry.empty() || opt.dir.empty()) {
@@ -111,12 +162,14 @@ int main() {
 					"  <pattern>            File name or part of the file name to search for\n\n"
 					"Options:\n"
 					"  -d <directory>       Root directory to search in (required)\n"
-					"  -h                   Display this help message\n" << std::endl;
+					"  --max-results <n>    Maximum number of files to return\n"
+					"  --max-depth <n>      Maximum recursion depth\n"
+					"  -h, --help           Display this help message\n" << std::endl;
 			}
 			else {
-				std::cout << "Search pattern: " << opt.entry << "\n";
-				std::cout << "Search directory: " << opt.dir << "\n\n";
-				searchFiles(opt.entry, opt.dir);
+				/*std::cout << "Search pattern: " << (std::string) opt.entry << "\n";
+				std::cout << "Search directory: " << opt.dir << "\n\n";*/
+				searchFiles(opt);
 			}
 		}
 	}
