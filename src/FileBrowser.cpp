@@ -9,56 +9,63 @@ namespace fs = std::filesystem;
 struct SearchOption
 {
 	bool help = false;
-	std::u8string entry;
-	std::u8string dir;
+	std::string entry;
+	std::string dir;
 	int maxDepth = -1;
 	int maxResoults = -1;
 };
 
-static std::u8string toLower(std::u8string s) {
-
-	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-		return std::tolower(c);
-		});
+static std::string toLower(std::string s) {
+	for (char& c : s) {
+		if (c >= 'A' && c <= 'Z') {
+			c = c - 'A' + 'a';
+			return s;
+		}
+	}
 	return s;
 }
 
-static bool checkFlags(std::vector<std::u8string>& args, SearchOption& options) {
+static std::string toLower(std::u8string u8s) {
+	std::string s(reinterpret_cast<const char*>(u8s.data()), u8s.length());
+	for (char8_t& c : u8s) {
+		if (c >= 'A' && c <= 'Z') {
+			c = c - 'A' + 'a';
+			return s;
+		}
+	}
+	return s;
+}
+
+static bool checkFlags(std::vector<std::string>& args, SearchOption& options) {
 	if (args.size() < 2) {
 		std::cerr << "Error: missing required arguments.\n";
 		std::cerr << "Use 'search -h' to display help.\n";
 		return false;
 	}
 
-	std::u8string arg;
+	std::string arg;
 	for (size_t i = 1; i < args.size(); i++) {
 		arg = args[i];
 		if (i == 1) {
 			options.entry = arg;
 		}
-		else if (arg == (const char8_t*)"-h") {
+		else if (arg == "-h") {
 			options.help = true;
 		}
-		else if (i + 1 < args.size() && arg == (const char8_t*)"-d") {
+		else if (i + 1 < args.size() && arg == "-d") {
 			options.dir = args[++i];
 		}
-		else if (i + 1 < args.size() && arg == (const char8_t*)"--max-results") {
-			const std::u8string& val = args[++i];
-			std::string str(reinterpret_cast<const char*>(val.data()), val.size());
-
+		else if (i + 1 < args.size() && arg == "--max-results") {
 			try {
-				options.maxResoults = std::stoi(str);
+				options.maxResoults = std::stoi(args[++i]);
 			}
 			catch (const std::exception& e) {
 				std::cerr << "Error: Invalid number for --max-results: " << e.what() << std::endl;
 			}
 		}
-		else if (i + 1 < args.size() && arg == (const char8_t*)"--max-depth") {
-			const std::u8string& val = args[++i];
-			std::string str(reinterpret_cast<const char*>(val.data()), val.size());
-
+		else if (i + 1 < args.size() && arg == "--max-depth") {
 			try {
-				options.maxDepth = std::stoi(str);
+				options.maxDepth = std::stoi(args[++i]);
 			}
 			catch (const std::exception& e) {
 				std::cerr << "Error: Invalid number for --max-depth: " << e.what() << std::endl;
@@ -68,8 +75,8 @@ static bool checkFlags(std::vector<std::u8string>& args, SearchOption& options) 
 	return true;
 }
 
-static void parseString(const std::string& input, std::vector<std::u8string>& args) {
-	std::u8string current;
+static void parseString(const std::string& input, std::vector<std::string>& args) {
+	std::string current;
 
 	for (char c : input) {
 		if (c == '"') {
@@ -94,8 +101,8 @@ static void searchFiles(SearchOption& opt) {
 	if (!fs::is_directory(opt.dir)) return;
 
 	auto start = std::chrono::steady_clock::now();
-	const std::u8string targetLower = toLower(opt.entry);
-	std::u8string fileName;
+	const std::string targetLower = toLower(opt.entry);
+	std::string fileName;
 	std::string pathStr;
 
 	std::error_code ec;
@@ -105,6 +112,7 @@ static void searchFiles(SearchOption& opt) {
 	for (const auto& entry : it) {
 		if (opt.maxDepth > 0 && it.depth() > opt.maxDepth) { it.disable_recursion_pending(); continue; }
 		if (opt.maxResoults > 0 && opt.maxResoults <= resoults) { break; }
+
 		auto status = entry.status(ec);
 		if (ec || status.type() != fs::file_type::regular) continue;
 
@@ -144,14 +152,14 @@ static void searchFiles(SearchOption& opt) {
 
 int main() {
 	std::string input;
-	std::vector<std::u8string> args;
+	std::vector<std::string> args;
 
 	std::getline(std::cin, input);
 
 	parseString(input, args);
 
 	if (args.empty()) return 1;
-	if (args[0] == (const char8_t*)"search") {
+	if (args[0] == "search") {
 		SearchOption opt;
 		if (checkFlags(args, opt)) {
 			if (opt.help || opt.entry.empty() || opt.dir.empty()) {
@@ -167,8 +175,6 @@ int main() {
 					"  -h, --help           Display this help message\n" << std::endl;
 			}
 			else {
-				/*std::cout << "Search pattern: " << (std::string) opt.entry << "\n";
-				std::cout << "Search directory: " << opt.dir << "\n\n";*/
 				searchFiles(opt);
 			}
 		}
