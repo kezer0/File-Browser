@@ -38,7 +38,7 @@ Search time: 34 ms
 ## Build and Run
 - Build
 ```
-g++ -std=c++17 main.cpp -o filesearch
+g++ -std=c++20 main.cpp -o filesearch
 ```
 - Run
 ```
