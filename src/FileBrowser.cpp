@@ -12,14 +12,13 @@ struct SearchOption
 	std::string entry;
 	std::string dir;
 	int maxDepth = -1;
-	int maxResoults = -1;
+	int maxResult = -1;
 };
 
 static std::string toLower(std::string s) {
 	for (char& c : s) {
 		if (c >= 'A' && c <= 'Z') {
 			c = c - 'A' + 'a';
-			return s;
 		}
 	}
 	return s;
@@ -30,7 +29,6 @@ static std::string toLower(std::u8string u8s) {
 	for (char8_t& c : u8s) {
 		if (c >= 'A' && c <= 'Z') {
 			c = c - 'A' + 'a';
-			return s;
 		}
 	}
 	return s;
@@ -57,7 +55,7 @@ static bool checkFlags(std::vector<std::string>& args, SearchOption& options) {
 		}
 		else if (i + 1 < args.size() && arg == "--max-results") {
 			try {
-				options.maxResoults = std::stoi(args[++i]);
+				options.maxResult = std::stoi(args[++i]);
 			}
 			catch (const std::exception& e) {
 				std::cerr << "Error: Invalid number for --max-results: " << e.what() << std::endl;
@@ -96,7 +94,7 @@ static void parseString(const std::string& input, std::vector<std::string>& args
 	}
 }
 
-static void searchFiles(SearchOption& opt) {
+static void searchFiles(const SearchOption& opt) {
 	if (!fs::exists(opt.dir)) return;
 	if (!fs::is_directory(opt.dir)) return;
 
@@ -111,7 +109,7 @@ static void searchFiles(SearchOption& opt) {
 
 	for (const auto& entry : it) {
 		if (opt.maxDepth > 0 && it.depth() > opt.maxDepth) { it.disable_recursion_pending(); continue; }
-		if (opt.maxResoults > 0 && opt.maxResoults <= resoults) { break; }
+		if (opt.maxResult > 0 && opt.maxResult <= resoults) { break; }
 
 		auto status = entry.status(ec);
 		if (ec || status.type() != fs::file_type::regular) continue;
